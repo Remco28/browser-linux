@@ -91,3 +91,21 @@ Public Pages is the only option on a free plan, so the site cannot be hidden —
 - **High-DPI means emulate fewer pixels, not more.** A small guest mode scaled up on a 4K display is sharper *and* considerably faster than chasing `devicePixelRatio`.
 - **Remember comfort, not a resolution.** Which modes exist depends on the machine in front of you, so what travels is "I like text this big", and the mode is derived from the screen.
 - The page's own controls — export, import, settings — must stay reachable while fullscreen, and the app needs its own way out once the keyboard is captured.
+
+### The pointer has to stay where you aimed it
+
+Found by using it, and it was our bug rather than the emulator's.
+
+- **v86 sends mouse movement as raw host-pixel deltas and never divides by the display scale.** So a screen shown at anything other than 1:1 moves the guest's cursor at the wrong rate: shrunk, it lags your hand; enlarged, it runs ahead and reaches the screen's edges before your hand does — which is exactly how controls at the edges become unclickable. The gap compounds with every movement.
+- **Therefore whole-number scaling is a hard requirement, not a nicety.** A fractional "fit" was the default, and it was the whole problem.
+- **Two honest answers**: show the guest at 1:1, where the pointer is exact; or **capture the pointer** (`lock_mouse`), which hides the host cursor and asks for unadjusted movement, so there is no second cursor left to disagree with.
+- **A guest that enables the VMware absolute pointer escapes the constraint entirely.** v86 sends absolute coordinates too, but only uses them when the guest opts in, and stock TinyCore's X has no vmmouse driver, so it never does. This is a reason to want a known-good mouse driver in *our* image: with it, scaling stops being a correctness problem.
+- **Do not hide the drift.** When no whole number fits, the scale is labelled "pointer drifts" and capture is one click away. Silently showing a screen whose pointer is wrong is the worst available option.
+- **The lasting fix is a guest mode that fits the screen** — a small menu of resolutions in the image, so 1:1 is usually available. That is distro work (M7), not page work.
+- **Measured:** a 1600×680 stage cannot hold the 1024×768 guest at a whole number, so it fits at 0.885× and drifts; a 1500×930 stage gives 1× and an exact pointer.
+
+### Text has to be readable
+
+- **Two problems wearing one coat.** The mush is partly ours: a fractional scale resamples every glyph. Whole-number scaling with nearest-neighbour keeps pixels square and strokes even, so 2× is not just bigger than a 1.4× fit, it is sharper.
+- **The rest is the image's problem.** Stock TinyCore paints 6×13 bitmap fonts with no antialiasing, and nothing page-side makes that pleasant. Our own image ships a real font stack — DejaVu, fontconfig, hinted rendering — and that is the actual fix.
+- **Integer *upscaling* is the cheap trick that works today.** A small guest mode shown at 2× makes bitmap text larger and still perfectly crisp, which is the closest thing to a font fix available before we build our own image.

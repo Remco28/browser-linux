@@ -17,10 +17,22 @@
         <button id="start" class="primary">Start</button>
         <button id="restart" disabled title="Throw this machine away and boot a fresh one">Restart</button>
         <button id="fullscreen" disabled>Fullscreen</button>
-        <select id="scale" title="How to fit the guest's screen into this one">
-          <option value="fit">Fit</option>
+        <button
+          id="capture"
+          disabled
+          title="Hide your cursor and hand the mouse to the guest. Escape releases it."
+        >
+          Capture mouse
+        </button>
+        <select
+          id="scale"
+          title="How to fit the guest's screen into this one. Whole numbers keep the pointer exact; a fractional fit makes the two cursors drift apart."
+        >
+          <option value="auto">Fit · whole</option>
           <option value="1">1×</option>
           <option value="2">2×</option>
+          <option value="3">3×</option>
+          <option value="fill">Fill · drifts</option>
         </select>
         <span class="spacer"></span>
         <span id="state" class="state">idle</span>

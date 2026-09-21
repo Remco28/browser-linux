@@ -48,6 +48,7 @@ const el = {
   start: document.getElementById("start"),
   restart: document.getElementById("restart"),
   fullscreen: document.getElementById("fullscreen"),
+  capture: document.getElementById("capture"),
   scale: document.getElementById("scale"),
   state: document.getElementById("state"),
   stage: document.getElementById("stage"),
@@ -67,6 +68,9 @@ let broken = false;
 // height attribute is 300×150 in every browser, and mistaking that for a video
 // mode the guest chose is exactly how a green light ends up over a black screen.
 let idleMode = "";
+// The running emulator, once there is one, and whether the pointer is captured.
+let emulator = null;
+let captured = false;
 
 /**
  * Every state and footer change, in order, with the time it happened.
@@ -152,7 +156,7 @@ async function start() {
   try {
     const buffer = await fetchWithProgress(image.url, image.label);
     say("starting emulator…");
-    const emulator = new V86({
+    emulator = new V86({
       wasm_path: "vendor/v86.wasm",
       memory_size: image.memoryMb * 1024 * 1024,
       // Headroom for a 1080p guest mode, which is what a crisp fullscreen needs.
@@ -179,6 +183,7 @@ async function start() {
     });
     el.restart.disabled = false;
     el.fullscreen.disabled = false;
+    el.capture.disabled = false;
   } catch (err) {
     broken = true;
     setState("failed", "bad");
@@ -193,38 +198,135 @@ async function start() {
 
 /* ---- fitting the guest's screen into this one --------------------------- */
 
+/**
+ * Fit the guest's screen into ours — with whole numbers, because the mouse
+ * depends on it.
+ *
+ * This is not fastidiousness. v86 sends pointer movement as raw host-pixel deltas
+ * and never divides by the display scale, so a screen shown at 0.89x moves the
+ * guest's cursor 0.89x as far as your hand for every pixel you move: the gap
+ * compounds with every movement until clicks land nowhere near where you aimed.
+ * Nothing but scale 1 keeps the two cursors together, because the guest has to
+ * opt into the absolute pointer that would fix it properly — and TinyCore's X has
+ * no vmmouse driver, so it never does. Capturing the mouse is the other honest
+ * answer: with the host cursor hidden there is nothing to line up.
+ *
+ * Whole numbers also keep text legible, which is the other reason to care.
+ * Fractional scaling resamples every glyph; an integer scale keeps pixels square,
+ * so 2x is not merely bigger than a 1.4x fit, it is sharper.
+ */
 function refit() {
   const canvas = el.canvas;
   if (!canvas?.width || !canvas?.height) return;
-  const mode = el.scale.value;
+  // Before the guest sets a mode this is the browser's default canvas, and sizing
+  // it would just stretch a blank rectangle behind the curtain.
+  if (`${canvas.width}×${canvas.height}` === idleMode) return;
+
   const boxW = el.stage.clientWidth;
   const boxH = el.stage.clientHeight;
-  const raw = Math.min(boxW / canvas.width, boxH / canvas.height);
-  const scale =
-    mode === "fit" ? raw : Number(mode) <= raw ? Number(mode) : raw;
+  const roomy = Math.min(boxW / canvas.width, boxH / canvas.height);
+  const whole = Math.max(1, Math.floor(roomy));
+
+  const mode = el.scale.value;
+  let scale;
+  let note = "";
+  if (mode === "fill") {
+    scale = roomy;
+  } else if (mode === "auto") {
+    // Below 1 no whole number fits, and a fit that overflows the stage is worse
+    // than a fractional one: you cannot see the bottom of a screen you cannot
+    // scroll to. Drifting pointers beat a missing half.
+    scale = roomy >= 1 ? whole : roomy;
+  } else {
+    scale = Number(mode);
+    if (scale > roomy) {
+      note = `${scale}× will not fit`;
+      scale = roomy >= 1 ? whole : roomy;
+    }
+  }
+
   canvas.style.width = `${Math.floor(canvas.width * scale)}px`;
   canvas.style.height = `${Math.floor(canvas.height * scale)}px`;
-  el.screenFit.textContent = `${scale.toFixed(2)}×`;
+  // Nearest-neighbour is the sharp choice when enlarging by a whole number, and
+  // the wrong choice when shrinking: it drops every eleventh row and leaves small
+  // text jagged, where smooth scaling is merely soft.
+  const wholePixels = Number.isInteger(scale) && scale > 1;
+  canvas.style.imageRendering = wholePixels ? "pixelated" : "auto";
+
+  const bits = [Number.isInteger(scale) ? `${scale}×` : `${scale.toFixed(2)}×`];
+  if (note) bits.push(note);
+  if (captured) bits.push("mouse captured");
+  else bits.push(scale === 1 ? "pointer exact" : "pointer drifts");
+  el.screenFit.textContent = bits.join(" · ");
+  // What the pointer maths depends on: v86 measures the element we hand it, so it
+  // has to be exactly the size of the screen we are showing.
+  record("fit", el.screenFit.textContent);
 }
 
-/** The guest picks its own mode; when it changes, the fit has to follow. */
+/* ---- the mouse ---------------------------------------------------------- */
+
+/**
+ * Capture the pointer, so the host cursor stops competing with the guest's.
+ *
+ * v86 can lock the mouse: the host cursor disappears and the browser is asked for
+ * unadjusted movement, so no pointer acceleration sits between your hand and the
+ * guest. That is what makes a scaled screen clickable, and what a browser machine
+ * needs to feel like a machine at all. Escape releases it — and the button says so,
+ * because a hidden pointer with no visible way back is a trap.
+ */
+async function toggleCapture() {
+  if (document.pointerLockElement) {
+    document.exitPointerLock();
+    return;
+  }
+  if (!emulator) return;
+  try {
+    await emulator.lock_mouse();
+  } catch (err) {
+    // Whether it worked is decided by the browser, so report the failure rather
+    // than showing a state we are not in.
+    say(`mouse capture refused: ${err?.message ?? err}`, "bad");
+  }
+}
+
+/** The label reports what actually happened, never what we asked for. */
+function syncCapture() {
+  captured = Boolean(document.pointerLockElement);
+  el.frame.classList.toggle("captured", captured);
+  el.capture.textContent = captured ? "Release mouse (Esc)" : "Capture mouse";
+  refit();
+}
+
+/**
+ * Watch what the guest is putting on screen — and the fit has to follow it.
+ *
+ * A guest says something in one of two ways: pixels on the canvas, when it sets
+ * a video mode, or characters in the text layer, which v86 keeps in a div for
+ * DOS-style modes. Both count as drawing. Watching only the canvas is the bug
+ * this used to have: a shell-only image never sets a video mode, so a working
+ * prompt sat there while the interface insisted nothing had happened yet.
+ */
 function watchGuestMode() {
-  let last = "";
+  let lastMode = "";
+  let lastText = "";
   setInterval(() => {
     const canvas = el.canvas;
     if (!canvas?.width) return;
     const mode = `${canvas.width}×${canvas.height}`;
-    if (mode === last) return;
-    last = mode;
+    const text = (el.screen.querySelector("div")?.textContent ?? "").trim();
+    if (mode === lastMode && text === lastText) return;
+    lastMode = mode;
+    lastText = text;
     // Until the guest sets a mode, the canvas is just the size the element
     // happens to be. There is no guest yet, so saying "guest 300×150" is worse
     // than saying nothing.
-    if (!idleMode || mode === idleMode) return;
-    el.guest.textContent = `guest ${mode}`;
-    refit();
-    // The first mode change means the guest took over its own screen. That is
+    if (mode !== idleMode) {
+      el.guest.textContent = `guest ${mode}`;
+      refit();
+    }
+    // Either kind of output means there is something on screen at last, which is
     // the moment worth calling "running" — not when the emulator object appeared.
-    if (!drew && !broken) {
+    if (!drew && !broken && (mode !== idleMode || text)) {
       drew = true;
       setState("running", "ok");
       say(`${selectedImage().label} — guest is drawing`);
@@ -268,9 +370,16 @@ function wireChrome() {
   document.addEventListener("keydown", wake);
   window.addEventListener("fullscreenchange", () => {
     wake();
-    if (!document.fullscreenElement) navigator.keyboard?.unlock?.();
+    if (!document.fullscreenElement) {
+      navigator.keyboard?.unlock?.();
+    } else {
+      // Fullscreen is a request to use this as a machine, and a machine whose
+      // pointer cannot be trusted is not usable. Capture on the way in.
+      emulator?.lock_mouse().catch(() => {});
+    }
     setTimeout(refit, 100);
   });
+  document.addEventListener("pointerlockchange", syncCapture);
 
   let resizeTimer;
   window.addEventListener("resize", () => {
@@ -295,6 +404,7 @@ function init() {
   el.start.addEventListener("click", start);
   el.restart.addEventListener("click", () => location.reload());
   el.fullscreen.addEventListener("click", toggleFullscreen);
+  el.capture.addEventListener("click", toggleCapture);
   el.scale.addEventListener("change", refit);
   wireChrome();
   idleMode = el.canvas ? `${el.canvas.width}×${el.canvas.height}` : "";

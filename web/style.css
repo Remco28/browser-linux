@@ -156,10 +156,15 @@ button:disabled {
 
 #screen_container canvas {
   display: block;
-  /* Fractional scaling is what "Fit" means; pixelated keeps it from turning
-     into mush. Whole-number scaling is the better answer once we control the
-     guest's own modes. */
-  image-rendering: pixelated;
+  /* Scaling, size and image-rendering are all decided in refit(), because the
+     mouse depends on them: see the note there before changing any of it. */
+}
+
+/* With the pointer captured the host cursor is meaningless — and worse than
+   meaningless, since it sits still while the guest's cursor moves. Hide it, and
+   let the Capture button be the way back out. */
+#frame.captured #screen_container canvas {
+  cursor: none;
 }
 
 /* ---- the before-you-start curtain ------------------------------------- */
