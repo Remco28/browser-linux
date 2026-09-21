@@ -44,6 +44,17 @@ The loop that results: **edit the recipe → build → boot it in the browser �
 - **Reached from the host browser: no.** The VM is not a machine on the host's network — that port is inside an emulator. A browser *inside* the distro is the intended answer, and it is enough.
 - **Files move in and out through the shared folder**, not through the network.
 
+### Hosting: GitHub Pages
+
+Stated by the human. It fits: the app is entirely static, so there is nothing for a server to do, and it needs no extra vendor or account.
+
+The four limits that shape the layout, and the reasons the disk image is not committed:
+
+- 1 GB recommended published site, 100 GB/month soft bandwidth, 10 builds/hour soft.
+- **100 MB hard limit per file in git**, and LFS pointers are not served. The image is published as a **Release asset** instead — CDN-backed, CORS-enabled, out of git history.
+- **No custom response headers**, so no `COOP`/`COEP`, so no `SharedArrayBuffer` and no threads. Harmless while v86 is single-threaded; it is the one thing that would force a move to Cloudflare Pages or Vercel.
+- **`Cache-Control: max-age=600`** on everything Pages serves, so a large image would be re-fetched after ten minutes. This is why the image is cached in **browser storage keyed by content hash** rather than left to HTTP caching — the storage design already removes that dependency.
+
 ### It has to feel fast
 
 - **Choose smaller software; do not write cleverer code.** Inside the guest, an Electron-shaped anything is out and a tiny window manager is in. Lean and old-school beats optimised and modern, and it is more fun.

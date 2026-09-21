@@ -132,6 +132,17 @@ The app is fully static: HTML, JS, a wasm emulator bundle, and one large binary 
 
 Fallbacks if the image grows past what Releases will serve, or if custom response headers are needed: **Cloudflare Pages** or **Vercel** (a static host with a strong CDN — this is also what the Gravity index recommends), with the image moved to object storage (R2/S3/B2). Custom headers matter only if we ever want `SharedArrayBuffer`/threads, which needs `COOP` + `COEP` and which GitHub Pages cannot set.
 
+### The numbers that shape this
+
+GitHub Pages is a good fit because there is nothing for a server to do — but four limits decide the layout:
+
+- **1 GB recommended published site**, **100 GB/month soft bandwidth**, **10 builds/hour soft.**
+- **100 MB hard limit per file in git**, and Pages will not serve LFS pointers. So the disk image cannot live in the repo once it grows: it goes to a **Release asset**, which is CDN-backed, CORS-enabled and out of git history. A deliberately tiny image could stay in the repo, but every rebuild would then bloat history.
+- **No custom response headers.** No `COOP`/`COEP`, therefore no `SharedArrayBuffer` and no threads. Harmless today — v86 is single-threaded — and the one thing that would ever force a move to Cloudflare Pages or Vercel.
+- **`Cache-Control: max-age=600` on everything Pages serves.** A 50 MB image would be re-fetched ten minutes later, which is exactly what 100 GB/month cannot afford. This is why the image is cached in **browser storage keyed by content hash** instead of being trusted to HTTP caching — the design already removes the dependency. Release assets also cache better than the Pages site itself.
+
+The bandwidth line is the one to watch if this is ever shared widely: at 50 MB an image, 100 GB is roughly 2,000 first visits per month. Cached revisits cost nothing, so the number is a *new-machine* budget, not a usage budget.
+
 ---
 
 ## 7. Constraints and gotchas to design around
