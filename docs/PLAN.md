@@ -137,7 +137,7 @@ Fallbacks if the image grows past what Releases will serve, or if custom respons
 ## 7. Constraints and gotchas to design around
 
 - **32-bit only.** v86 has no 64-bit extensions and no multicore. Package choices and binaries must be i386/x86. Anything modern that is 64-bit-only is simply out of reach.
-- **Real internet inside the VM is not free.** v86's NIC is emulated (NE2000) and its networking needs a relay/proxy to reach the outside; the browser cannot open raw sockets. A relay is a server component, which would be the first thing in this project to break "no backend". File exchange without a relay is available via the **9p shared filesystem**, which may be enough for v1.
+- **Networking is second-class, but it has an answer.** v86's NIC is emulated (NE2000) and the browser cannot open raw sockets, so reaching the outside normally means a relay — a server of ours, which would be the one thing that breaks "no backend". **Tailscale avoids that entirely**: it runs in userspace inside the guest, so the distro gets a real address on our private network and internet through a home exit node, with nothing of ours to run. File exchange stays on the **9p shared filesystem**, not on the network. See [DECISIONS.md](DECISIONS.md).
 - **Licences.** Bundling v86 obliges us to ship its BSD-2 notice. Shipping a Linux image means shipping the licences of everything inside it — normal for a distribution, worth doing properly once and then forgetting.
 - **Upstream etiquette.** v86 does not accept issues or pull requests written by generative AI tools. Fork and vendor freely; do not send patches upstream from this project.
 - **Graphics details we will hit.** Screen resolution changes via VBE, absolute vs relative mouse (pointer-lock), keyboard layout and clipboard are each a small project. The canvas is the easy part.
@@ -148,15 +148,31 @@ Fallbacks if the image grows past what Releases will serve, or if custom respons
 
 ## 8. Open questions
 
-Answer these before writing code — each one changes the shape of the work.
+Settled in the first design conversation — the reasoning is in [DECISIONS.md](DECISIONS.md):
 
-1. **Emulator: confirm v86.** It trades speed for state-native persistence, an open licence and a GUI that comes for free. Confirm, or argue for CheerpX and accept the rebuilt GUI path and the licence.
-2. **Base distribution: how custom?** Alpine now and Buildroot later (recommended), or go straight to a from-scratch Buildroot image? This decides whether milestone 7 is a swap or the whole project.
-3. **Desktop: real X in the canvas, or a web-native shell?** A real window manager inside the VM (recommended — it is what "Linux distribution" means) versus a browser-built UI wrapping a Linux userland, which would look more modern and feel less like an OS.
-4. **Does the VM need the internet?** If yes, we accept a relay somewhere and v1 gains a service. If no, file transfer via 9p is the whole story.
-5. **Container scope:** overlay diff only (recommended), or a full disk image for portability to a non-our-base Linux later?
-6. **Is mobile in scope?** If yes, it constrains storage and memory decisions from day one.
-7. **Name.** `browser-linux` is the repo. The distribution itself will want a name and a look.
+- **Q1 emulator: v86.** Confirmed.
+- **Q3 desktop: a real X desktop inside the VM, with a small browser in the guest.** A browser *inside* the distro is enough; the host browser never needs to reach into the VM.
+- **Q4 internet: yes, via Tailscale.** The guest is a client to the open internet and a device on the tailnet, with no server of ours to run.
+
+Still open:
+
+1. **Base distribution: how custom?** Alpine dressed up now and Buildroot later (the staged recommendation), or go straight to a from-scratch Buildroot image? This decides whether milestone 7 is a swap or the whole project — and leaning towards *more* custom, since the point is an OS of our own rather than a lightly-dressed Alpine.
+2. **Container scope:** overlay diff only (recommended), or a full disk image for portability to a non-our-base Linux later?
+3. **Is mobile in scope?** If yes, it constrains storage and memory decisions from day one.
+4. **Name.** `browser-linux` is the repo. The distribution itself will want a name and a look.
+
+## 8a. What it is, who it is for, and how it must feel
+
+Not architecture — intent, but it constrains the architecture, so it lives here too. Full reasoning in [DECISIONS.md](DECISIONS.md).
+
+| | |
+|---|---|
+| **Audience** | Family. An opinionated OS: our defaults, our look, our choices. Not built to be approved of by everyone. |
+| **Purpose** | A disposable Linux to tinker with and learn on; a lego set where even the desktop convention is negotiable; a home for small personal tools (messy CSV → readable HTML). |
+| **Agents** | They configure the distro from **outside** — recipe, build, then fold live tweaks back in. Not inside the guest: no 32-bit Node or Bun exists, and configuring an OS is build-time work. |
+| **Network** | Tailscale with a home exit node. A client to the internet, a device on the tailnet, never a server to the world. Host browser cannot reach guest ports; a browser *inside* the guest can. |
+| **Performance** | Choose dramatically smaller software rather than write cleverer code. Our own web code runs natively, so what matters is bytes and I/O. "Feels fast" is latency and perception: never blank, cache, make the second boot the fast one, lean on resume. |
+| **Fullscreen** | First-class, with two musts: match the guest resolution so it is crisp, and capture the keyboard so the browser stops keeping Ctrl+W. |
 
 ---
 
