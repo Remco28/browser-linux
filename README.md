@@ -6,6 +6,15 @@ A lightweight Linux distribution that runs entirely inside a web browser — wit
 
 **Try it:** <https://remco28.github.io/browser-linux/> — press Start, then give it a minute. The guest starts from firmware like a real machine, and the screen stays honestly blank until it takes over.
 
+## Known rough edges
+
+Honest state of the prototype, roughly in the order you notice them:
+
+- **The font is ugly.** TinyCore paints unantialiased 6×13 bitmap fonts, and no amount of page-side cleverness fixes that — it is the image's problem, and the answer is our own image. Whole-number scaling means it is at least *crisp* now rather than mushy.
+- **The screen may not fit yours.** The guest is 1024×768, so an exact 1:1 pointer needs a viewport about 830 px tall. Shorter than that and it scales fractionally, which makes the guest's cursor drift away from your hand. The footer says which case you are in, and **Capture mouse** hides your cursor and makes clicks exact again.
+- **Graphics are unaccelerated.** Everything is emulated in JavaScript, on one 32-bit core. It is not fast, and care in the page will not make it fast.
+- **Nothing persists.** Reloading throws the machine away. That is milestone 2, and it is the actual product.
+
 ## Running it locally
 
 ```bash
