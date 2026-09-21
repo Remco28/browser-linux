@@ -44,6 +44,16 @@ The loop that results: **edit the recipe → build → boot it in the browser �
 - **Reached from the host browser: no.** The VM is not a machine on the host's network — that port is inside an emulator. A browser *inside* the distro is the intended answer, and it is enough.
 - **Files move in and out through the shared folder**, not through the network.
 
+### The container can be the whole OS
+
+A realization worth keeping: the export does not have to be a *diff* against a base image. It can carry the entire disk.
+
+- A whole-OS container is genuinely self-contained. It does not care what the site is serving, so an old container still boots after we move the base on, and a stranger's visit costs the site almost nothing.
+- The public site shrinks to a bootloader — a few hundred KB — with the megabytes living in the user's own Drive.
+- The cost is size: a few hundred MB to carry instead of a few MB, and a slower import.
+
+**We build both and compare by using them.** One file format, a `mode` field in the manifest, and export offers a choice. The diff stays the default until experience says otherwise.
+
 ### Hosting: GitHub Pages
 
 Stated by the human. It fits: the app is entirely static, so there is nothing for a server to do, and it needs no extra vendor or account.
@@ -54,6 +64,16 @@ The four limits that shape the layout, and the reasons the disk image is not com
 - **100 MB hard limit per file in git**, and LFS pointers are not served. The image is published as a **Release asset** instead — CDN-backed, CORS-enabled, out of git history.
 - **No custom response headers**, so no `COOP`/`COEP`, so no `SharedArrayBuffer` and no threads. Harmless while v86 is single-threaded; it is the one thing that would force a move to Cloudflare Pages or Vercel.
 - **`Cache-Control: max-age=600`** on everything Pages serves, so a large image would be re-fetched after ten minutes. This is why the image is cached in **browser storage keyed by content hash** rather than left to HTTP caching — the storage design already removes that dependency.
+
+### Keeping the site from being a target
+
+Public Pages is the only option on a free plan, so the site cannot be hidden — only made uninteresting to strangers. The instinct, and it is the right one: gate the boot behind a click, keep search engines out.
+
+- The limit is **soft**. Exceeding 100 GB/month gets the site warned or throttled, never billed, so this protects availability rather than money.
+- The real traffic is **crawlers and scrapers**, not people. They refetch large files forever, ignore the rules polite crawlers follow — and they do not click buttons, which is exactly why a click-gate works.
+- The strongest lever is a **small image**, which is already the design direction.
+- Push the heavy bytes off the Pages meter entirely (Release asset, or Cloudflare R2).
+- Be honest about what this is: obscurity, not security. The image URL is in the shipped JavaScript. It stops accidents and casual visitors, not a determined person.
 
 ### It has to feel fast
 
@@ -66,4 +86,7 @@ The four limits that shape the layout, and the reasons the disk image is not com
 
 - Browser fullscreen on the canvas works, and it is how this is meant to be used.
 - Two things to build for, or it will feel like a website instead of an OS: tell the **guest** to change its resolution to match, so the screen is crisp rather than stretched; and **capture the keyboard** (Keyboard Lock), because otherwise the browser keeps Ctrl+W, Ctrl+T and friends for itself.
-- The page's own controls — export, import, settings — must stay reachable while fullscreen.
+- **Match, never stretch.** The guest is told to change mode so pixels stay 1:1, with whole-number scaling as the fallback when an exact fit is impossible. Upscaling the canvas blurs text, and this is the machine's only screen.
+- **High-DPI means emulate fewer pixels, not more.** A small guest mode scaled up on a 4K display is sharper *and* considerably faster than chasing `devicePixelRatio`.
+- **Remember comfort, not a resolution.** Which modes exist depends on the machine in front of you, so what travels is "I like text this big", and the mode is derived from the screen.
+- The page's own controls — export, import, settings — must stay reachable while fullscreen, and the app needs its own way out once the keyboard is captured.

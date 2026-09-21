@@ -109,6 +109,13 @@ Rules that make it safe to import:
 - **Two import modes**, chosen by the user, because they mean different things: `boot` (disk only, starts clean, everything intact) and `resume` (disk + RAM/CPU, exactly as left). `state.zst` is optional and large — RAM-sized — so it is not written into every export by default.
 - **Import is a merge, not an overwrite.** The container is a diff against a known base, so importing onto a machine with local changes is a decision point, not a silent clobber.
 
+**Two shapes, and we build both to compare.** The same file format covers them with a `mode` field in the manifest:
+
+- **Diff** (default, described above): base id + hash plus only the changed blocks. Small to export and carry, and it needs a matching base to be available.
+- **Whole OS**: the container carries the entire disk, base and all. Far bigger to move around (a few hundred MB) and slower to import, but genuinely self-contained — it does not care what the site is currently serving, an old container still boots after the base moves on, and a stranger's visit costs the site almost nothing.
+
+Which one wins is a question for use, not for argument, so export offers both and the diff stays the default.
+
 What we deliberately do **not** do: sync. A container is a fork of your OS. Two machines that both import it and both change it will diverge, and resolving that needs a merge story and an identity layer that this project does not want.
 
 ### Browser storage, honestly
@@ -143,6 +150,20 @@ GitHub Pages is a good fit because there is nothing for a server to do — but f
 
 The bandwidth line is the one to watch if this is ever shared widely: at 50 MB an image, 100 GB is roughly 2,000 first visits per month. Cached revisits cost nothing, so the number is a *new-machine* budget, not a usage budget.
 
+### Abuse and the quota
+
+Private Pages needs an enterprise plan, so on a free plan the site is public and cannot be hidden — only made uninteresting to strangers. The limit is **soft**: exceeding 100 GB/month gets the site warned or throttled, never billed, so this protects availability rather than money.
+
+The real traffic is not people. It is **crawlers and scrapers**, which refetch large files indefinitely and ignore the rules that polite crawlers follow. Ranked by what actually helps:
+
+1. **A small image.** 20 MB instead of 200 MB turns 100 GB into roughly 5,000 first loads instead of 500. Already the design direction, and the strongest lever available.
+2. **Gate the boot behind a click plus a shared passphrase.** Scrapers do not click buttons. This is obscurity, not security — the image URL sits in the shipped JavaScript — and it is enough to stop accidents and casual traffic.
+3. **`noindex` and `robots.txt`**, so search engines stay out. Polite crawlers obey; rude ones do not, which is why the click-gate carries more weight.
+4. **Keep the heavy bytes off the Pages meter.** A Release asset is not counted against Pages bandwidth, and Cloudflare R2 charges nothing for egress. Cloudflare Access in front of a custom domain is the only genuine lock available, and even it is bypassable via the raw `github.io` URL on a free plan.
+5. **Cache in browser storage** (already the design), so a repeat visit costs nothing at all.
+
+And the structural answer, which is better than all five: if the container *is* the OS (§5), the public site is a bootloader of a few hundred KB and the megabytes live in the user's own storage. Strangers then cost nothing to speak of.
+
 ---
 
 ## 7. Constraints and gotchas to design around
@@ -157,6 +178,21 @@ The bandwidth line is the one to watch if this is ever shared widely: at 50 MB a
 
 ---
 
+## 7a. Display, fullscreen, and fitting the screen
+
+The browser only ever manages **one canvas**. It does not manage windows — the guest's window manager does. So the entire problem reduces to one question: *how many pixels do we give the guest, and how do we fit them on the screen in front of us?*
+
+- **Fullscreen works** — on the canvas, or on a wrapper element — and it is how this is meant to be used. It needs a click to enter, and in fullscreen the browser's own chrome disappears, which is most of the "this feels like an OS" win.
+- **Match the guest to the screen rather than stretching it.** Upscaling the canvas blurs text and wastes space on letterbox bars. The guest can be told to change mode (VBE makes this possible), so the honest approach is a small **menu of resolutions baked into the image** (720p, 1280×800, 1440×900, 1080p, …) with the page picking the best fit.
+- **Prefer whole-number scaling.** When an exact match is impossible, an integer scale (2×, 3×) keeps pixels square and text sharp. A guest at 960×540 on a 1920×1080 screen is exactly 2×, and looks right.
+- **On high-DPI screens, emulate fewer pixels, not more.** On a 4K display, running the guest at 1280×720 and scaling 3× is sharper *and* emulates 0.9 megapixels instead of 8 — a large performance win. Do not chase `devicePixelRatio`.
+- **Resizing is a storm; debounce it.** Dragging a window edge fires continuous resize events. Let it settle for ~200 ms before asking the guest to change mode, or the guest will spend all its time reconfiguring instead of running.
+- **Mode changes are not free.** The guest reconfigures X and the window manager relayouts, so a brief black frame is expected and acceptable. Choosing well at boot is much cheaper than changing later.
+- **Capture the keyboard, then provide your own way out.** Keyboard Lock claims Ctrl+W, Ctrl+T and friends — the difference between an OS and a website — but it also takes away the browser's usual escape, so the app must offer its own hotkey or hover control to leave fullscreen.
+- **Remember comfort, not a resolution.** Which modes exist depends on the machine in front of you, so storing "1440×900" travels badly. Store a *scale preference* ("I like text this big") and derive the mode from the screen.
+
+---
+
 ## 8. Open questions
 
 Settled in the first design conversation — the reasoning is in [DECISIONS.md](DECISIONS.md):
@@ -168,7 +204,7 @@ Settled in the first design conversation — the reasoning is in [DECISIONS.md](
 Still open:
 
 1. **Base distribution: how custom?** Alpine dressed up now and Buildroot later (the staged recommendation), or go straight to a from-scratch Buildroot image? This decides whether milestone 7 is a swap or the whole project — and leaning towards *more* custom, since the point is an OS of our own rather than a lightly-dressed Alpine.
-2. **Container scope:** overlay diff only (recommended), or a full disk image for portability to a non-our-base Linux later?
+2. **Container scope — building both.** A diff against a known base, and a container carrying the whole OS. Same format, a `mode` field; compared by using them (§5).
 3. **Is mobile in scope?** If yes, it constrains storage and memory decisions from day one.
 4. **Name.** `browser-linux` is the repo. The distribution itself will want a name and a look.
 
