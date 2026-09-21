@@ -1,0 +1,201 @@
+:root {
+  --bg: #0a0c0f;
+  --chrome: #12161c;
+  --line: #1e242c;
+  --ink: #c3ccd6;
+  --dim: #6b7684;
+  --ok: #6cc08b;
+  --bad: #e0716b;
+  --busy: #d8b46a;
+  --accent: #2d6cdf;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+#frame {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+/* ---- toolbar ------------------------------------------------------------ */
+
+#bar,
+#foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--chrome);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+#bar {
+  border-bottom: 1px solid var(--line);
+}
+
+#foot {
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 12px;
+}
+
+/* In fullscreen the chrome gets out of the way, which is most of the reason
+   fullscreen exists. It comes back the moment you move the mouse. */
+#frame.idle-ui #bar,
+#frame.idle-ui #foot {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+}
+
+#frame.idle-ui #foot {
+  transform: translateY(2px);
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-right: 4px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+select,
+button {
+  font: inherit;
+  color: var(--ink);
+  background: #1a2029;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 9px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #222a35;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: #3f7ce8;
+  color: #fff;
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #3a78e6;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.state {
+  font-size: 12px;
+  color: var(--dim);
+  min-width: 74px;
+  text-align: right;
+}
+.state.ok { color: var(--ok); }
+.state.bad { color: var(--bad); }
+.state.busy { color: var(--busy); }
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#log.bad { color: var(--bad); }
+
+/* ---- the machine's screen ---------------------------------------------- */
+
+#stage {
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #000;
+}
+
+#screen_container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* v86 swaps between these two depending on text or graphics mode. */
+#screen_container > div {
+  white-space: pre;
+  font: 14px/14px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #c8c8c8;
+}
+
+#screen_container canvas {
+  display: block;
+  /* Fractional scaling is what "Fit" means; pixelated keeps it from turning
+     into mush. Whole-number scaling is the better answer once we control the
+     guest's own modes. */
+  image-rendering: pixelated;
+}
+
+/* ---- the before-you-start curtain ------------------------------------- */
+
+#idle {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+  padding: 24px;
+  background: radial-gradient(120% 90% at 50% 0%, #101620 0%, var(--bg) 70%);
+}
+
+#idle[hidden] {
+  display: none;
+}
+
+#idle h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+#idle p {
+  margin: 3px 0;
+  max-width: 46ch;
+}
+
+#idle .dim {
+  color: var(--dim);
+}
+
+#idle .small {
+  font-size: 12px;
+  margin-top: 14px;
+}

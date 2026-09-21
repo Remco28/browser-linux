@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- A public Pages site cannot be hidden, so it is made uninteresting instead. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>browser-linux — prototype</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="frame">
+      <header id="bar">
+        <span class="brand">browser-linux</span>
+        <select id="image" title="Which machine to boot"></select>
+        <button id="start" class="primary">Start</button>
+        <button id="restart" disabled title="Throw this machine away and boot a fresh one">Restart</button>
+        <button id="fullscreen" disabled>Fullscreen</button>
+        <select id="scale" title="How to fit the guest's screen into this one">
+          <option value="fit">Fit</option>
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+        </select>
+        <span class="spacer"></span>
+        <span id="state" class="state">idle</span>
+      </header>
+
+      <div id="stage">
+        <div id="screen_container">
+          <div></div>
+          <canvas></canvas>
+        </div>
+        <div id="idle">
+          <h1>a computer you can borrow</h1>
+          <p>Press <strong>Start</strong> to boot a small Linux inside this tab.</p>
+          <p class="dim">
+            Nothing downloads until you do, and nothing you do here leaves this browser.
+          </p>
+          <p class="dim small">
+            Give it a minute: the guest starts from firmware like a real machine, so the
+            screen stays blank for a while before anything appears. The text-shell image
+            is up far sooner if you just want a prompt.
+          </p>
+          <p class="dim small">
+            Prototype: reloading throws the machine away. Keeping what you changed is the
+            next milestone, and the hard one.
+          </p>
+        </div>
+      </div>
+
+      <footer id="foot">
+        <span id="guest" class="mono">—</span>
+        <span id="screen-fit" class="mono"></span>
+        <span class="spacer"></span>
+        <span id="log" class="mono"></span>
+      </footer>
+    </div>
+    <script src="vendor/libv86.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,45 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # The disk images are not in git, so they are fetched here and land in
+      # the artifact below. Server-side there is no referer, so i.copy.sh serves
+      # them; from the page itself it would answer 403, and release assets would
+      # fail CORS. Same-origin is the only placement that works.
+      - name: Fetch disk images
+        run: bash web/tools/fetch-images.sh
+
+      # The app has no build step on purpose: what is in web/ is what runs,
+      # minus node_modules/, which is where the vendored copy came from.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

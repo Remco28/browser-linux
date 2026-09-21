@@ -61,7 +61,7 @@ Stated by the human. It fits: the app is entirely static, so there is nothing fo
 The four limits that shape the layout, and the reasons the disk image is not committed:
 
 - 1 GB recommended published site, 100 GB/month soft bandwidth, 10 builds/hour soft.
-- **100 MB hard limit per file in git**, and LFS pointers are not served. The image is published as a **Release asset** instead — CDN-backed, CORS-enabled, out of git history.
+- **100 MB hard limit per file in git**, and LFS pointers are not served. The image is fetched into the deployed artifact instead, so it stays out of git history. **Not** a Release asset: measured, those send no `Access-Control-Allow-Origin`, so a browser fetch of one is blocked outright.
 - **No custom response headers**, so no `COOP`/`COEP`, so no `SharedArrayBuffer` and no threads. Harmless while v86 is single-threaded; it is the one thing that would force a move to Cloudflare Pages or Vercel.
 - **`Cache-Control: max-age=600`** on everything Pages serves, so a large image would be re-fetched after ten minutes. This is why the image is cached in **browser storage keyed by content hash** rather than left to HTTP caching — the storage design already removes that dependency.
 
@@ -72,7 +72,7 @@ Public Pages is the only option on a free plan, so the site cannot be hidden —
 - The limit is **soft**. Exceeding 100 GB/month gets the site warned or throttled, never billed, so this protects availability rather than money.
 - The real traffic is **crawlers and scrapers**, not people. They refetch large files forever, ignore the rules polite crawlers follow — and they do not click buttons, which is exactly why a click-gate works.
 - The strongest lever is a **small image**, which is already the design direction.
-- Push the heavy bytes off the Pages meter entirely (Release asset, or Cloudflare R2).
+- Push the heavy bytes off the Pages meter entirely — object storage with CORS, such as Cloudflare R2 (free egress), once the image outgrows Pages. A Release asset does **not** serve this purpose: it fails CORS from a browser.
 - Be honest about what this is: obscurity, not security. The image URL is in the shipped JavaScript. It stops accidents and casual visitors, not a determined person.
 
 ### It has to feel fast
@@ -81,6 +81,7 @@ Public Pages is the only option on a free plan, so the site cannot be hidden —
 - **Our own code is not emulated.** The page, the emulator wiring and the storage layer run natively, at full speed. Micro-optimising them buys little. What matters is **bytes and I/O**: how fast the image arrives, how fast browser storage answers, and not holding memory the VM needs.
 - **"Feels fast" is a latency and perception problem, not a throughput problem.** Never show a blank screen. Cache what can be cached. Make the *second* boot the one that feels instant. Lean on **resume**, which can feel faster than a real machine's cold boot.
 - Guest RAM and screen resolution are dials worth keeping modest. A weaker host machine is honestly slower, and we should say so rather than hide it.
+- **Measured, from the prototype:** emulator up at 2.6 s, first pixels at **98 s** on a headless box booting TinyCore. The guest is blank until it sets a video mode, then draws everything at once. So the state line says "waiting for the guest to draw" rather than "running" — an optimistic green light over a black screen is precisely the dishonesty this project should not ship.
 
 ### Fullscreen and the keyboard are first-class
 

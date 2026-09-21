@@ -1,0 +1,14 @@
+{
+  "name": "browser-linux-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The page: one canvas, a stock Linux image, and the wiring between them.",
+  "scripts": {
+    "start": "bun tools/serve.mjs",
+    "smoke": "bun tools/smoke.mjs"
+  },
+  "dependencies": {
+    "v86": "0.5.462"
+  }
+}

@@ -134,7 +134,7 @@ The app is fully static: HTML, JS, a wasm emulator bundle, and one large binary 
 | Piece | Where | Why |
 |---|---|---|
 | Page + emulator bundle | **GitHub Pages** | Same repo, free, custom domain, no extra account or vendor. |
-| Base disk image | **GitHub Releases** asset | Repos and Pages have per-file limits (~100 MB), Pages will not serve LFS pointers, and release assets are CDN-backed with CORS. Keeps a big binary out of git history. |
+| Base disk image | **our own origin**, on Pages | Fetched into the deployed artifact by a script, so it stays out of git history. It cannot come from anywhere else — see §6a. |
 | The user's container | their own storage | Never ours. Exported to Downloads, carried by the user. |
 
 Fallbacks if the image grows past what Releases will serve, or if custom response headers are needed: **Cloudflare Pages** or **Vercel** (a static host with a strong CDN — this is also what the Gravity index recommends), with the image moved to object storage (R2/S3/B2). Custom headers matter only if we ever want `SharedArrayBuffer`/threads, which needs `COOP` + `COEP` and which GitHub Pages cannot set.
@@ -144,11 +144,31 @@ Fallbacks if the image grows past what Releases will serve, or if custom respons
 GitHub Pages is a good fit because there is nothing for a server to do — but four limits decide the layout:
 
 - **1 GB recommended published site**, **100 GB/month soft bandwidth**, **10 builds/hour soft.**
-- **100 MB hard limit per file in git**, and Pages will not serve LFS pointers. So the disk image cannot live in the repo once it grows: it goes to a **Release asset**, which is CDN-backed, CORS-enabled and out of git history. A deliberately tiny image could stay in the repo, but every rebuild would then bloat history.
+- **100 MB hard limit per file in git**, and Pages will not serve LFS pointers. So the disk image must not live in git once it grows: it is fetched at deploy time into the Pages artifact instead — out of history, and still served from our own origin (§6a). A deliberately tiny image could be committed, but every rebuild would then bloat history.
 - **No custom response headers.** No `COOP`/`COEP`, therefore no `SharedArrayBuffer` and no threads. Harmless today — v86 is single-threaded — and the one thing that would ever force a move to Cloudflare Pages or Vercel.
-- **`Cache-Control: max-age=600` on everything Pages serves.** A 50 MB image would be re-fetched ten minutes later, which is exactly what 100 GB/month cannot afford. This is why the image is cached in **browser storage keyed by content hash** instead of being trusted to HTTP caching — the design already removes the dependency. Release assets also cache better than the Pages site itself.
+- **`Cache-Control: max-age=600` on everything Pages serves.** A 50 MB image would be re-fetched ten minutes later, which is exactly what 100 GB/month cannot afford. This is why the image is cached in **browser storage keyed by content hash** instead of being trusted to HTTP caching — the design already removes the dependency.
 
 The bandwidth line is the one to watch if this is ever shared widely: at 50 MB an image, 100 GB is roughly 2,000 first visits per month. Cached revisits cost nothing, so the number is a *new-machine* budget, not a usage budget.
+
+### 6a. What the prototype settled
+
+Two things were settled by measurement rather than argument, and both corrected an earlier guess.
+
+**Where the image actually lives.** The plan said Release assets. That was wrong:
+
+- **v86's own image host, `i.copy.sh`, answers `403` to any request carrying a referer from another origin** — it cannot be hotlinked from a page we serve, even though `curl` fetches it happily.
+- **GitHub release assets are unusable from a browser too.** `github.com/.../releases/download/...` redirects to `objects.githubusercontent.com`, which sends **no `Access-Control-Allow-Origin`**, so the fetch is blocked before a byte arrives.
+
+So the images are served **from our own origin** — the one placement where CORS never enters into it — and **not from git**: `web/tools/fetch-images.sh` pulls them with pinned checksums into `web/images/` (gitignored) for local work, and the Pages workflow runs the same script so they land in the deployed artifact instead of the history. 27 MB across two images today, well inside the per-file ceiling.
+
+That is a prototype-sized answer, not the permanent one, and its boundary is visible: once an image passes the **100 MB** per-file limit, or bandwidth starts to matter, the image moves to object storage with configurable CORS — **Cloudflare R2** is the obvious candidate, with free egress. Release assets stay off the list entirely, because the blocker is **CORS and not "is it a CDN"**.
+
+**How long a boot takes.** Measured in headless Chrome, counted from pressing Start: the emulator is alive at **2.6 s**, and the first pixels appear at **98 s** (TinyCore, 19 MB, on a test box with no GPU acceleration — expect substantially less on a real desktop). The guest is genuinely blank until the very end: it sets its video mode late and then draws everything at once.
+
+Two consequences, both now in the code:
+
+- **The interface must not claim more than it knows.** The state line stays amber and says "waiting for the guest to draw" until the guest actually changes its video mode. A green light over a black screen is a lie, and the first version of this prototype told it.
+- **The blank wait is the thing to attack**, not emulator throughput: a smaller base image, and eventually **resume** from a snapshot, are what turn 98 s into something tolerable.
 
 ### Abuse and the quota
 
@@ -159,7 +179,7 @@ The real traffic is not people. It is **crawlers and scrapers**, which refetch l
 1. **A small image.** 20 MB instead of 200 MB turns 100 GB into roughly 5,000 first loads instead of 500. Already the design direction, and the strongest lever available.
 2. **Gate the boot behind a click plus a shared passphrase.** Scrapers do not click buttons. This is obscurity, not security — the image URL sits in the shipped JavaScript — and it is enough to stop accidents and casual traffic.
 3. **`noindex` and `robots.txt`**, so search engines stay out. Polite crawlers obey; rude ones do not, which is why the click-gate carries more weight.
-4. **Keep the heavy bytes off the Pages meter.** A Release asset is not counted against Pages bandwidth, and Cloudflare R2 charges nothing for egress. Cloudflare Access in front of a custom domain is the only genuine lock available, and even it is bypassable via the raw `github.io` URL on a free plan.
+4. **Keep the heavy bytes off the Pages meter.** Object storage with CORS does this — Cloudflare R2 charges nothing for egress — and it is where the image goes once it outgrows Pages (§6a). Cloudflare Access in front of a custom domain is the only genuine lock available, and even it is bypassable via the raw `github.io` URL on a free plan.
 5. **Cache in browser storage** (already the design), so a repeat visit costs nothing at all.
 
 And the structural answer, which is better than all five: if the container *is* the OS (§5), the public site is a bootloader of a few hundred KB and the megabytes live in the user's own storage. Strangers then cost nothing to speak of.
@@ -230,14 +250,14 @@ Each one ends in something observable. M1–M5 are the spine; M6+ is polish and 
 | | Milestone | Done when |
 |---|---|---|
 | **M0** | Planning | This document exists, the repo exists, the questions above are answered. |
-| **M1** | It boots | A stock 32-bit image boots in v86 from a local page: canvas, keyboard, mouse. No persistence. Just "Linux is on screen". |
+| **M1** | It boots | **Built.** A stock TinyCore image boots in v86 from a local page and from the deployed site: canvas, keyboard, mouse. No persistence, so a reload is a fresh machine. Measured at 2.6 s to a live emulator and 98 s to first pixels (§6a). |
 | **M2** | It persists | Changes survive a reload, via the overlay in IndexedDB. `persist()` is requested and its result is shown. |
 | **M3** | It has a desktop | X with a small window manager, resolution handling, usable mouse and keyboard, a terminal, and a way to open more than one window. |
 | **M4** | The container | Export writes a zip; import restores it; a mismatched or corrupt container is refused with a reason a human can act on. |
 | **M5** | Resume | Optional state save/restore so a session comes back mid-command, with the size cost shown before it is written. |
 | **M6** | It is pleasant | File exchange with the host (9p and/or drag-and-drop), clipboard, sound, screenshots, sensible defaults. |
 | **M7** | It is our distribution | The image is built from our own recipe in-repo: our package set, our branding, first-run setup, our name. |
-| **M8** | It is reachable | Deployed: page on Pages, image on Releases, custom domain, and a documented upgrade path for the base image. |
+| **M8** | It is reachable | Deployed: page on Pages, images fetched into the artifact at build time, custom domain, and a documented upgrade path for the base image. |
 
 ## 10. References
 

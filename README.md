@@ -2,7 +2,24 @@
 
 A lightweight Linux distribution that runs entirely inside a web browser — with a graphical desktop, and all of its state living in the browser and in a container file you own.
 
-**Status: planning.** There is no code yet. [docs/PLAN.md](docs/PLAN.md) holds the architecture, the decisions already made and the ones still open.
+**Status: a prototype that boots.** Linux comes up in the tab and that is genuinely all it does so far — no persistence, so a reload is a fresh machine. [docs/PLAN.md](docs/PLAN.md) holds the architecture, the decisions made and the ones still open; [docs/DECISIONS.md](docs/DECISIONS.md) holds the reasoning behind them.
+
+**Try it:** <https://remco28.github.io/browser-linux/> — press Start, then give it a minute. The guest starts from firmware like a real machine, and the screen stays honestly blank until it takes over.
+
+## Running it locally
+
+```bash
+web/tools/fetch-images.sh       # the disk images: 27 MB, deliberately not in git
+cd web && bun tools/serve.mjs   # then open http://127.0.0.1:8080/
+```
+
+To check it without a window:
+
+```bash
+cd web && bun tools/smoke.mjs http://127.0.0.1:8080/ 130000 /tmp/boot.png
+```
+
+That drives headless Chrome, clicks Start, and brings back evidence rather than a hope: the boot timeline, what the page said about itself and when, the console, and a screenshot. A blank screen shows up as one colour and 0% lit instead of as a PNG nobody opens.
 
 ## The idea
 
@@ -30,21 +47,23 @@ Import is not a reinstall. It is a restore.
 
 x86 emulation in WebAssembly is now mature enough to boot unmodified 32-bit Linux at usable speed, draw a real desktop into a `<canvas>`, and snapshot the whole machine into a file. That last capability is what makes the container idea work rather than being wishful, and it is why the plan leans on [v86](https://github.com/copy/v86) — BSD-2 licensed, real hardware emulation, native state save and restore — over a faster but more closed alternative.
 
-## Intended layout
+## Layout
 
 ```
-web/            the page: canvas, input, container import/export, settings
-web/emulator/   v86 wiring: boot config, block-device backend, state save/restore
-web/store/      browser storage: overlay blocks, config, quota and eviction handling
-image/          the distro build: base disk image, reproducible from a recipe
+web/            the page: canvas, input, fitting, fullscreen, the state line
+web/vendor/     v86 and its BIOS, vendored — there is no build step on purpose
+web/images/     the disk images, fetched by script, never committed
+tools/          the dev server and the headless smoke test (under web/tools/)
 docs/           the plan, decisions, and what is still unknown
 ```
 
-Nothing in `web/` talks to a server except to fetch the immutable base image and the emulator bundle. There is no backend to write.
+Still to come, per the plan: the emulator wiring split out (`web/emulator/`), the storage layer (`web/store/`), and the distro build (`image/`, reproducible from a recipe).
+
+Nothing in `web/` talks to a server except to fetch the disk images and the emulator bundle. There is no backend to write.
 
 ## License
 
-Not chosen yet. Two things to settle before it is: the emulator's own notice must ship with any bundle of it, and a Linux image carries the licenses of everything inside it. See the plan's notes on shipping a distribution.
+Not chosen yet. Two things are already handled, though: the emulator's BSD-2 notice ships with the bundle at [`web/vendor/LICENSE.v86`](web/vendor/LICENSE.v86), and any Linux image we distribute will carry the licences of everything inside it. See the plan's notes on shipping a distribution.
 
 ## Inspiration
 
