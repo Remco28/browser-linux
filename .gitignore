@@ -1,0 +1,20 @@
+# Build output
+dist/
+node_modules/
+
+# The base disk image is large and immutable; it is published as a release
+# asset, never committed. Anything built from recipe lives here too.
+images/
+*.img
+*.iso
+*.qcow2
+
+# A locally exported container is user data, not source
+*.container
+*.blzip
+
+# Tooling
+.venv/
+__pycache__/
+.DS_Store
+*.log
